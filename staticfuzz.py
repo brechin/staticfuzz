@@ -19,22 +19,20 @@ Options:
 """
 
 import json
-import logging
 import mimetypes
 import os
 import random
 import re
 import urllib
 
-from google.appengine.api import urlfetch
-
-import flask
 import markupsafe
 import requests
-from flask_limiter import Limiter
+from google.appengine.api import urlfetch
 from google.appengine.ext import ndb
 
+import flask
 import glitch
+from flask_limiter import Limiter
 
 # Create and init the staticfuzz
 app = flask.Flask(__name__)
@@ -72,7 +70,7 @@ class Memory(ndb.Model):
 
         """
         created_memory = Memory(text=text)
-        if uri_valid_image(text): # valid uri to image?
+        if uri_valid_image(text):  # valid uri to image?
             created_memory.base64_image = glitch.glitch_from_url(text)
         return created_memory
 
@@ -179,9 +177,9 @@ class SlashCommand(object):
         # cause debugging headaches.
         except:
             raise
-        # except TypeError as ex:
-        #     return SlashCommandResponse(False, ('%s incorrect args' %
-        #                                         cls.NAME, 400))
+            # except TypeError as ex:
+            #     return SlashCommandResponse(False, ('%s incorrect args' %
+            #                                         cls.NAME, 400))
 
     @staticmethod
     def callback(*args):
@@ -330,9 +328,12 @@ def uri_valid_image(uri):
     """
 
     image_extension_whitelist = (".jpg", ".jpeg", ".png", ".gif")
+    if not uri.lower().endswith(image_extension_whitelist):
+        return False
 
     # actually fetch the resource to see if it's real or not
     try:
+        assert uri.startswith('http')
         resp = urlfetch.fetch(uri)
         assert resp.status_code == 200
     except (requests.exceptions.InvalidSchema,
@@ -341,7 +342,7 @@ def uri_valid_image(uri):
             AssertionError):
         return False
 
-    return uri.lower().endswith(image_extension_whitelist)
+    return True
 
 
 @app.errorhandler(429)
