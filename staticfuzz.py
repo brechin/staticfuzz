@@ -18,39 +18,32 @@ Options:
 
 """
 
-import mimetypes
-import datetime
-import random
 import json
+import logging
+import mimetypes
 import os
+import random
 import re
+import urllib
+
+from google.appengine.api import urlfetch
 
 import flask
-import docopt
-import gevent
-import requests
 import markupsafe
+import requests
 from flask_limiter import Limiter
-from flask_sqlalchemy import SQLAlchemy
-from gevent.pywsgi import WSGIServer
-from gevent import monkey
+from google.appengine.ext import ndb
 
 import glitch
-
-
-monkey.patch_all()  # NOTE: totally cargo culting this one
 
 # Create and init the staticfuzz
 app = flask.Flask(__name__)
 app.config.from_object("config")
 limiter = Limiter(app)
 
-db = SQLAlchemy(app)
 
-
-class Memory(db.Model):
-    """SQLAlchemy/database abstraction of a memory.
-
+class Memory(ndb.Model):
+    """
     Memories are aptly kept in the "memories" table.
 
     Fields/attributes:
@@ -62,15 +55,12 @@ class Memory(db.Model):
             image. Used as thumbnail.
 
     """
+    timestamp = ndb.DateTimeProperty(auto_now_add=True)
+    text = ndb.StringProperty(required=True)
+    base64_image = ndb.TextProperty(default=None)
 
-    __tablename__ = "memories"
-    id = db.Column(db.Integer, primary_key=True)
-    timestamp = db.Column(db.DateTime,
-                          default=datetime.datetime.utcnow)
-    text = db.Column(db.Unicode(140), unique=True)
-    base64_image = db.Column(db.String())
-
-    def __init__(self, text):
+    @classmethod
+    def create(cls, text):
         """Create a new memory with text and optionally base64
         representation of the image content found at the URI in
         the text argument.
@@ -81,17 +71,10 @@ class Memory(db.Model):
                 be generated for said image.
 
         """
-
-        self.text = text
-
-        if uri_valid_image(text):  # valid uri to image?
-            self.base64_image = glitch.glitch_from_url(text)
-        else:
-            self.base64_image = None
-
-    def __repr__(self):
-
-        return "<Memory #%d: %s>" % (self.id, self.text)
+        created_memory = Memory(text=text)
+        if uri_valid_image(text): # valid uri to image?
+            created_memory.base64_image = glitch.glitch_from_url(text)
+        return created_memory
 
     def to_dict(self):
         """Return a dictionary representation of this Memory.
@@ -110,7 +93,7 @@ class Memory(db.Model):
         return {"text": self.text,
                 "timestamp": timestamp,
                 "base64_image": self.base64_image,
-                "id": self.id}
+                "id": self.key.id()}
 
 
 class SlashCommandResponse(object):
@@ -180,31 +163,29 @@ class SlashCommand(object):
         """
 
         text = text.lower().strip()
-        pattern = "/" + cls.NAME
+        pattern = '/' + cls.NAME
 
-        if not (text.startswith(pattern + " ") or
-                text == pattern):
-
+        if not re.match(r'%s\s*' % pattern, text):
             return None
 
-        text = text.replace(pattern, u"")
-        args = [arg.strip() for arg in text.split(" ") if arg.strip()]
+        text = text.replace(pattern, '')
+        args = [arg.strip() for arg in text.split(' ') if arg.strip()]
 
         try:
-
             return cls.callback(*args)
 
         # NOTE: what if typeerror is raised because of something
         # in the callback. Seems like a bad approach... could
         # cause debugging headaches.
-        except TypeError:
-
-            return SlashCommandResponse(False, ("%s incorrect args" %
-                                                cls.NAME, 400))
+        except:
+            raise
+        # except TypeError as ex:
+        #     return SlashCommandResponse(False, ('%s incorrect args' %
+        #                                         cls.NAME, 400))
 
     @staticmethod
     def callback(*args):
-        """Ovverride this with another staticmethod; do something
+        """Override this with another staticmethod; do something
         with the args, return a SlashCommandResponse.
 
         Use any number of args you please (including 0) or *args
@@ -226,7 +207,7 @@ class SlashLogin(SlashCommand):
 
     """
 
-    NAME = u"login"
+    NAME = 'login'
 
     @staticmethod
     def callback(secret_attempt):
@@ -264,7 +245,7 @@ class SlashLogout(SlashCommand):
 
     """
 
-    NAME = u"logout"
+    NAME = 'logout'
 
     @staticmethod
     def callback():
@@ -291,7 +272,7 @@ class SlashDanbooru(SlashCommand):
 
     """
 
-    NAME = u"danbooru"
+    NAME = 'danbooru'
 
     @staticmethod
     def callback(*args):
@@ -308,11 +289,11 @@ class SlashDanbooru(SlashCommand):
 
         """
 
-        tags = "%20".join(args)
+        tags = urllib.quote_plus(' '.join(args))
         endpoint = ('http://danbooru.donmai.us/posts.json?'
                     'tags=%s&limit=10&page1' % tags)
-        results = requests.get(endpoint).json()
-
+        resp = urlfetch.fetch(endpoint)
+        results = json.loads(resp.content)
         try:
             selected_image = ("http://danbooru.donmai.us" +
                               random.choice(results)["file_url"])
@@ -330,7 +311,7 @@ class SlashDanbooru(SlashCommand):
 def number_links(string_being_filtered):
     escaped_string = markupsafe.escape(string_being_filtered)
     unicode_escaped_string = unicode(escaped_string)
-    pattern = re.compile("(?<!&)(#\d+)")
+    pattern = re.compile(r'(?<!&)(#\d+)')
     final_string = pattern.subn(r'<a href="\1">\1</a>',
                                 unicode_escaped_string)[0]
 
@@ -352,14 +333,12 @@ def uri_valid_image(uri):
 
     # actually fetch the resource to see if it's real or not
     try:
-        request = requests.get(uri)
-        assert request.status_code == 200
-
+        resp = urlfetch.fetch(uri)
+        assert resp.status_code == 200
     except (requests.exceptions.InvalidSchema,
             requests.exceptions.MissingSchema,
             requests.exceptions.ConnectionError,
             AssertionError):
-
         return False
 
     return uri.lower().endswith(image_extension_whitelist)
@@ -373,83 +352,68 @@ def ratelimit_handler(error):
         error (?): automagically provided
 
     """
-
     return app.config["ERROR_RATE_EXCEEDED"], 429
 
 
 @app.route('/random_image', methods=['GET', 'POST'])
 @limiter.limit("2/second")
 def random_image():
-    # NOTE: should be a config var
     image_directory = app.config["RANDOM_IMAGE_DIRECTORY"]
-    image_path = os.path.join(image_directory,
-                              random.choice(os.listdir(image_directory)))
-            
+    images = os.listdir(image_directory)
+    image_path = os.path.join(
+            image_directory,
+            random.choice(images)
+    )
     return flask.send_file(image_path, mimetypes.guess_type(image_path)[0])
 
 
-def init_db():
-    """For use on command line for setting up
-    the database.
-
-    """
-
-    db.drop_all()
-    db.create_all()
-
-    test_memory = Memory(text=app.config["FIRST_MESSAGE"])
-    db.session.add(test_memory)
-    db.session.commit()
-
-
-def event():
-    """EventSource stream; server side events. Used for
-    sending out new memories.
-
-    Returns:
-        json event (str): --
-
-    See Also:
-        stream()
-
-    """
-
-    with app.app_context():
-
-        try:
-            latest_memory_id = Memory.query.order_by(Memory.id.desc()).first().id
-        except AttributeError:
-            # .id will raise AttributeError if the query doesn't match anything
-            latest_memory_id = 0
-
-    while True:
-
-        with app.app_context():
-            memories = (Memory.query.filter(Memory.id > latest_memory_id).
-                        order_by(Memory.id.asc()).all())
-
-        if memories:
-            latest_memory_id = memories[-1].id
-            newer_memories = [memory.to_dict() for memory in memories]
-
-            yield "data: " + json.dumps(newer_memories) + "\n\n"
-
-        with app.app_context():
-            gevent.sleep(app.config['SLEEP_RATE'])
+# def event():
+#     """EventSource stream; server side events. Used for
+#     sending out new memories.
+#
+#     Returns:
+#         json event (str): --
+#
+#     See Also:
+#         stream()
+#
+#     """
+#     with app.app_context():
+#
+#         try:
+#             latest_memory_id = Memory.query().order(Memory.timestamp).get(keys_only=True).id()
+#         except AttributeError:
+#             # .id will raise AttributeError if the query doesn't match anything
+#             latest_memory_id = 0
+#
+#     while True:
+#
+#         with app.app_context():
+#             memories = (Memory.query.filter(Memory.id > latest_memory_id).
+#                         order_by(Memory.id.asc()).all())
+#
+#         if memories:
+#             latest_memory_id = memories[-1].id
+#             newer_memories = [memory.to_dict() for memory in memories]
+#
+#             yield "data: " + json.dumps(newer_memories) + "\n\n"
+#
+#         with app.app_context():
+#             gevent.sleep(app.config['SLEEP_RATE'])
 
 
-@app.route('/stream/', methods=['GET', 'POST'])
-@limiter.limit("15/minute")
-def stream():
-    """SSE (Server Side Events), for an EventSource. Send
-    the event of a new message.
-
-    See Also:
-        event()
-
-    """
-
-    return flask.Response(event(), mimetype="text/event-stream")
+# @app.route('/stream/', methods=['GET', 'POST'])
+# @limiter.limit("15/minute")
+# def stream():
+#     """SSE (Server Side Events), for an EventSource. Send
+#     the event of a new message.
+#
+#     See Also:
+#         event()
+#
+#     """
+#
+#     return flask.Response(event(), mimetype="text/event-stream")
 
 
 @app.route('/')
@@ -458,10 +422,8 @@ def show_memories():
     """Show the memories.
 
     """
-
-    memories = Memory.query.order_by(Memory.id.asc()).all()
+    memories = Memory.query().order(Memory.timestamp)
     memories_for_jinja = [memory.to_dict() for memory in memories]
-
     return flask.render_template('show_memories.html',
                                  memories=memories_for_jinja)
 
@@ -474,17 +436,14 @@ def validate(memory_text):
 
     # memory must be at least 1 char
     if len(memory_text) == 0:
+        return 'Too short!', 400
 
-        return u"Too short!", 400
-
-    # memomry text may not exceed MAX_CHARACTERS
+    # memory text may not exceed MAX_CHARACTERS
     if len(memory_text) > app.config['MAX_CHARACTERS']:
-
         return app.config["ERROR_TOO_LONG"], 400
 
     # you cannot repost something already in the memories
-    if Memory.query.filter_by(text=memory_text).all():
-
+    if Memory.query(Memory.text == memory_text).count() > 0:
         return app.config["ERROR_UNORIGINAL"], 400
 
     # success!
@@ -513,7 +472,6 @@ def new_memory():
     validation_payload = validate(memory_text)
 
     if validation_payload:
-
         return validation_payload
 
     # commands
@@ -521,42 +479,34 @@ def new_memory():
 
     for slash_command in slash_commands:
         result = slash_command.attempt(memory_text)
-
         if result is None:
-
             # only happens if it is a non-match
             continue
 
         elif result.create_memory is True:
             memory_text = result.value
-
             break
-
         elif result.create_memory is False:
-
             return result.value
 
     # We do not want to submit anything that didn't execute
     # a slash command, but starts with a slash! This is in
-    # case of an event like "/logni password", so it's not
+    # case of an event like "/login password", so it's not
     # broadcasted to the entire world.
     #
     # At this point, either we have made a change to the
     # database and return'd out, or we modified the memory
     # text, in which it'll differ from original_memory.
     if memory_text[0] == '/' and memory_text == original_memory_text:
-
         return "Invalid Slash Command", 400
 
     # If there are ten memories already, delete the oldest
     # to make room!
-    if Memory.query.count() == 10:
-        memory_to_delete = Memory.query.order_by(Memory.id.asc()).first()
-        db.session.delete(memory_to_delete)
-
-    new_memory = Memory(text=memory_text)
-    db.session.add(new_memory)
-    db.session.commit()
+    while Memory.query().count() == 10:
+        memory_to_delete = Memory.query().order(Memory.timestamp).get(keys_only=True)
+        memory_to_delete.delete()
+    new_memory = Memory.create(memory_text)
+    new_memory.put()
 
     return flask.redirect(flask.url_for('show_memories'))
 
@@ -576,24 +526,7 @@ def forget():
     if not flask.session.get('deity'):
         flask.abort(401)
 
-    Memory.query.filter_by(id=flask.request.form["id"]).delete()
-    db.session.commit()
+    memory_key_to_forget = ndb.Key('Memory', int(flask.request.form["id"]))
+    memory_key_to_forget.delete()
 
     return flask.redirect(flask.url_for('show_memories'))
-
-
-# NOTE: this is all the way at the bottom so we can use init_db!
-if app.config["SQLALCHEMY_DATABASE_URI"] == "sqlite:///:memory:":
-    # Use memory SQLITE database! Meaning the HDD is never touched!
-    # Since this database will be in the memory, we have to create
-    # it at the beginning of every app run.
-    init_db()
-
-if __name__ == '__main__':
-    arguments = docopt.docopt(__doc__)
-
-    if arguments["init_db"]:
-        init_db()
-
-    if arguments["serve"]:
-        WSGIServer(('', app.config["PORT"]), app).serve_forever()
