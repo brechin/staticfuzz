@@ -2,15 +2,17 @@
 
 """
 
-import io
-import sys
-import urllib2
-import random
 import base64
+import io
+import random
+import urllib2
+try:
+    from cStringIO import StringIO
+except ImportError:
+    from StringIO import StringIO
 
-from flask import current_app as app
 from PIL import Image, ImageOps
-from cStringIO import StringIO
+from flask import current_app as app
 
 
 def atkinson_dither(pil_image):
@@ -24,7 +26,7 @@ def atkinson_dither(pil_image):
 
     img = pil_image.convert('L')
 
-    threshold = 128*[0] + 128*[255]
+    threshold = 128 * [0] + 128 * [255]
 
     for y in range(img.size[1]):
 
@@ -32,11 +34,11 @@ def atkinson_dither(pil_image):
 
             old = img.getpixel((x, y))
             new = threshold[old]
-            err = (old - new) >> 3 # divide by 8
+            err = (old - new) >> 3  # divide by 8
 
             img.putpixel((x, y), new)
 
-            for nxy in [(x+1, y), (x+2, y), (x-1, y+1), (x, y+1), (x+1, y+1), (x, y+2)]:
+            for nxy in [(x + 1, y), (x + 2, y), (x - 1, y + 1), (x, y + 1), (x + 1, y + 1), (x, y + 2)]:
 
                 try:
                     img.putpixel(nxy, img.getpixel(nxy) + err)
@@ -86,7 +88,7 @@ def glitch_from_url(url_string):
         tweaked_image = ImageOps.equalize(tweaked_image)
 
     max_colors = random.randint(app.config['MIN_COLORS'],
-    app.config['MAX_COLORS'])
+                                app.config['MAX_COLORS'])
     tweaked_image = tweaked_image.convert(mode='P',
                                           palette=Image.ADAPTIVE,
                                           colors=max_colors)
@@ -100,7 +102,7 @@ def glitch_from_url(url_string):
     inverse_color = (abs(first_color[0] - 255),
                      abs(first_color[1] - 255),
                      abs(first_color[2] - 255))
-                       
+
     tweaked_image = ImageOps.colorize(tweaked_image,
                                       first_color,
                                       inverse_color)
