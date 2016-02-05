@@ -6,7 +6,7 @@
       <li id="{{ memory.id }}">
         <article class="memory">
           <header>
-            <h2>#{{ memory.id }}</h2>
+{#            <h2>#{{ memory.id }}</h2>#}
             <time class="timestamp">{{ memory.timestamp }}</time>
             {% if session.deity %}
               <form action="{{ url_for('forget') }}" method=post>
