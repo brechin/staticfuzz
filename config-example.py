@@ -1,15 +1,6 @@
 # Where memories will be temporarily kept.
 #SQLALCHEMY_DATABASE_URI = 'sqlite:////tmp/staticfuzz.db'
 
-# Database for memories.
-#
-# Use a sqlite database file on disk:
-#
-#   SQLALCHEMY_DATABASE_URI = 'sqlite:////tmp/staticfuzz.db'
-#   
-# Use sqlite memory database (never touches disk):
-SQLALCHEMY_DATABASE_URI = 'sqlite:///:memory:'
-
 # Port to listen on when serving
 PORT = 5000
 
