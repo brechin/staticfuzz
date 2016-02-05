@@ -6,8 +6,8 @@
 # TODO: Enter your application id below. If you have signed up
 # using cloud.google.com/console use the "project id" for your application
 # id.
-application: staticfuzz-1211
-version: 1
+#application: staticfuzz-1211
+#version: 1
 runtime: python27
 api_version: 1
 threadsafe: yes
