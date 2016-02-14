@@ -1,9 +1,7 @@
-# staticfuzz
+# staticfuzz (GAE)
 
-[![Travis](https://img.shields.io/travis/hypatia-software-org/staticfuzz.svg?style=flat-square)](https://travis-ci.org/hypatia-software-org/staticfuzz)
-[![Code Climate](https://img.shields.io/codeclimate/github/hypatia-software-org/staticfuzz.svg?style=flat-square)](https://codeclimate.com/github/hypatia-software-org/staticfuzz)
-
-See it live: http://staticfuzz.com/
+This is a Google App Engine fork of
+[staticfuzz](https://github.com/hypatia-software-org/).
 
 Memories which vanish. Live message board, in the spirit of
 early anonymous message boards, like http://www.2ch.net/ and
