@@ -3,9 +3,11 @@
 """
 
 import base64
-import io
+import logging
 import random
-import urllib2
+
+import requests
+
 try:
     from cStringIO import StringIO
 except ImportError:
@@ -51,17 +53,17 @@ def atkinson_dither(pil_image):
 def glitch_from_url(url_string):
     """This is the thumbnail generating function.
 
+    Convert to low-quality JPEG, adjust, solarize, convert to 1-bit color
     """
 
     # get the image from the net
     headers = {'User-Agent': 'Mozilla/5.0'}
-    req = urllib2.Request(url_string, None, headers)
-    urlopen_result = urllib2.urlopen(req)
-    urlopen_result_io = io.BytesIO(urlopen_result.read())
+    response = requests.get(url_string, headers=headers)
+    image_file = StringIO(response.content)
 
     # open and tweak the image
     # open, resize...
-    tweaked_image = Image.open(urlopen_result_io)
+    tweaked_image = Image.open(image_file)
     tweaked_image.thumbnail([app.config['THUMB_MAX_WIDTH'],
                              app.config['THUMB_MAX_HEIGHT']])
 
@@ -70,9 +72,11 @@ def glitch_from_url(url_string):
     tweaked_image_io = StringIO()
     tweaked_image.save(tweaked_image_io, format="JPEG",
                        quality=random.randint(5, 20))
+    # Seek back to beginning
+    tweaked_image_io.seek(0)
     tweaked_image = Image.open(tweaked_image_io)
 
-    # autocontrast
+    # auto-contrast
     tweaked_image = ImageOps.autocontrast(tweaked_image)
     tweaked_image = ImageOps.equalize(tweaked_image)
 
