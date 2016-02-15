@@ -334,7 +334,7 @@ def uri_valid_image(uri):
     # actually fetch the resource to see if it's real or not
     try:
         assert uri.startswith('http')
-        resp = urlfetch.fetch(uri)
+        resp = requests.head(uri)
         assert resp.status_code == 200
     except (requests.exceptions.InvalidSchema,
             requests.exceptions.MissingSchema,
