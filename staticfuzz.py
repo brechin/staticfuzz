@@ -18,7 +18,6 @@ Options:
 
 """
 
-import json
 import mimetypes
 import os
 import random
@@ -27,7 +26,6 @@ import urllib
 
 import markupsafe
 import requests
-from google.appengine.api import urlfetch
 from google.appengine.ext import ndb
 
 import flask
@@ -290,8 +288,8 @@ class SlashDanbooru(SlashCommand):
         tags = urllib.quote_plus(' '.join(args))
         endpoint = ('http://danbooru.donmai.us/posts.json?'
                     'tags=%s&limit=10&page1' % tags)
-        resp = urlfetch.fetch(endpoint)
-        results = json.loads(resp.content)
+        resp = requests.get(endpoint)
+        results = resp.json()
         try:
             selected_image = ("http://danbooru.donmai.us" +
                               random.choice(results)["file_url"])
@@ -362,8 +360,8 @@ def random_image():
     image_directory = app.config["RANDOM_IMAGE_DIRECTORY"]
     images = os.listdir(image_directory)
     image_path = os.path.join(
-            image_directory,
-            random.choice(images)
+        image_directory,
+        random.choice(images)
     )
     return flask.send_file(image_path, mimetypes.guess_type(image_path)[0])
 
